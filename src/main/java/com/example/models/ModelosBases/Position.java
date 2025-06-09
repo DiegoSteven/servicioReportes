@@ -364,4 +364,43 @@ public class Position {
         this.outdated = outdated;
     }
 
+//métodos auxiliares
+    public boolean hasAttribute(String key) {
+        return attributes != null && attributes.containsKey(key);
+    }
+    
+    public double getDouble(String key) {
+        Object value = attributes.get(key);
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        try {
+            return Double.parseDouble(value.toString());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+    
+    public long getLong(String key) {
+        Object value = attributes.get(key);
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        try {
+            return Long.parseLong(value.toString());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+    
+    public String getString(String key) {
+        Object value = attributes.get(key);
+        return value != null ? value.toString() : null;
+    }
+    
+    public double getTotalDistance() {
+        return getDouble(KEY_TOTAL_DISTANCE); // usa la constante que ya definiste
+    }
+    
+
 }

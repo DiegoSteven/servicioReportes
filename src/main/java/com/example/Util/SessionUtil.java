@@ -26,6 +26,8 @@ public class SessionUtil {
         Object email = getSessionData(request).get("email");
         return email != null ? email.toString() : null;
     }
+    
+
 
     private Map<String, Object> getSessionData(HttpServletRequest request) {
         String sessionCookie = Arrays.stream(request.getCookies())

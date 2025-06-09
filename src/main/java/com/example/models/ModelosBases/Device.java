@@ -2,9 +2,11 @@ package com.example.models.ModelosBases;
 
 import jakarta.persistence.*;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
+import com.example.Util.AttributesConverter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-
 
 @Entity
 @Table(name = "tc_devices")
@@ -58,6 +60,10 @@ public class Device {
     @Column(name = "expirationtime")
     @Temporal(TemporalType.TIMESTAMP)
     private Date expirationTime;
+
+    @Convert(converter = AttributesConverter.class)
+    @Column(name = "attributes")
+    private Map<String, Object> attributes = new HashMap<>();
 
     @Transient
     @JsonIgnore
@@ -258,5 +264,13 @@ public class Device {
 
     public void setOverspeedGeofenceId(Long overspeedGeofenceId) {
         this.overspeedGeofenceId = overspeedGeofenceId;
+    }
+
+    public Map<String, Object> getAttributes() {
+        return attributes;
+    }
+    
+    public void setAttributes(Map<String, Object> attributes) {
+        this.attributes = attributes;
     }
 }

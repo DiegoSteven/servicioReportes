@@ -47,6 +47,14 @@ public class Event {
         this.eventTime = new Date();
     }
 
+    public Event(String type, Position position) {
+        this.type = type;
+        this.deviceId = position.getDeviceId().intValue();
+        this.positionId = position.getId().intValue(); // si es Long, conviértelo
+        this.eventTime = position.getFixTime();
+    }
+    
+
     public static final String TYPE_COMMAND_RESULT = "commandResult";
     public static final String TYPE_DEVICE_ONLINE = "deviceOnline";
     public static final String TYPE_DEVICE_UNKNOWN = "deviceUnknown";

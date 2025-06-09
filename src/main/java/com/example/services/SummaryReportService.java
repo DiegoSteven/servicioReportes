@@ -1,19 +1,24 @@
 package com.example.services;
 
+import com.example.Util.ReportUtils;
+import com.example.models.ModelosBases.Device;
+import com.example.models.ModelosBases.Position;
+import com.example.models.SummaryReportItem;
+import com.example.repositories.DeviceRepository;
+import com.example.repositories.PositionRepository;
+import org.jxls.util.JxlsHelper;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.time.Duration;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-
-import org.springframework.stereotype.Service;
-
-import com.example.Util.ReportUtils;
-import com.example.models.SummaryReportItem;
-import com.example.models.ModelosBases.Device;
-import com.example.models.ModelosBases.Position;
-import com.example.repositories.DeviceRepository;
-import com.example.repositories.PositionRepository;
+import java.util.stream.Collectors;
 
 @Service
 public class SummaryReportService {
@@ -31,43 +36,30 @@ public class SummaryReportService {
         this.reportUtils = reportUtils;
     }
 
-    public Collection<SummaryReportItem> getObjects(
-            Long userId,
-            Collection<Long> deviceIds,
-            Collection<Long> groupIds,
-            Date from,
-            Date to,
-            boolean daily) {
+    public Collection<SummaryReportItem> getObjects(Long userId, Collection<Long> deviceIds,
+                                                    Collection<Long> groupIds, Date from, Date to,
+                                                    boolean daily) {
 
         reportUtils.checkPeriodLimit(from, to);
+        ZoneId timezone = reportUtils.getUserTimezone(userId);
 
-        ZoneId timezone = ZoneId.systemDefault(); // Por ahora, fijo. Luego podemos obtenerlo por usuario.
 
         List<SummaryReportItem> result = new ArrayList<>();
         List<Device> devices = deviceRepository.findAccessibleByUserId(userId, deviceIds, groupIds);
 
         for (Device device : devices) {
-            List<SummaryReportItem> deviceResults = calculateDeviceResults(
-                    device,
-                    from.toInstant().atZone(timezone),
-                    to.toInstant().atZone(timezone),
-                    daily
-            );
-            for (SummaryReportItem summary : deviceResults) {
-                if (summary.getStartTime() != null && summary.getEndTime() != null) {
-                    result.add(summary);
-                }
-            }
+            ZonedDateTime fromZdt = from.toInstant().atZone(timezone);
+            ZonedDateTime toZdt = to.toInstant().atZone(timezone);
+            result.addAll(calculateDeviceResults(device, fromZdt, toZdt, daily));
         }
 
-        return result;
+        return result.stream()
+                .filter(r -> r.getStartTime() != null && r.getEndTime() != null)
+                .collect(Collectors.toList());
     }
 
-    private List<SummaryReportItem> calculateDeviceResults(
-            Device device,
-            ZonedDateTime from,
-            ZonedDateTime to,
-            boolean daily) {
+    private List<SummaryReportItem> calculateDeviceResults(Device device, ZonedDateTime from,
+                                                           ZonedDateTime to, boolean daily) {
 
         List<SummaryReportItem> results = new ArrayList<>();
         boolean fast = Duration.between(from, to).toSeconds() > 86400;
@@ -76,7 +68,8 @@ public class SummaryReportService {
             while (from.truncatedTo(ChronoUnit.DAYS).isBefore(to.truncatedTo(ChronoUnit.DAYS))) {
                 ZonedDateTime fromDay = from.truncatedTo(ChronoUnit.DAYS);
                 ZonedDateTime nextDay = fromDay.plusDays(1);
-                results.addAll(calculateDeviceResult(device, Date.from(fromDay.toInstant()), Date.from(nextDay.toInstant()), fast));
+                results.addAll(calculateDeviceResult(device,
+                        Date.from(fromDay.toInstant()), Date.from(nextDay.toInstant()), fast));
                 from = nextDay;
             }
         }
@@ -87,40 +80,51 @@ public class SummaryReportService {
 
     private List<SummaryReportItem> calculateDeviceResult(Device device, Date from, Date to, boolean fast) {
 
+        List<Position> positions = positionRepository.findByDeviceIdAndFixTimeBetween(device.getId(), from, to);
+        if (positions.isEmpty()) return List.of();
+
+        Position first = positions.get(0);
+        Position last = positions.get(positions.size() - 1);
+
         SummaryReportItem summary = new SummaryReportItem();
         summary.setDeviceId(device.getId());
         summary.setDeviceName(device.getName());
+        summary.setStartTime(first.getFixTime());
+        summary.setEndTime(last.getFixTime());
+        summary.setMaxSpeed(positions.stream().mapToDouble(Position::getSpeed).max().orElse(0));
 
-        //Position first = positionRepository.findFirstByDeviceIdAndFixTimeBetweenOrderByFixTimeAsc(device.getId(), from, to);
-        //Position last = positionRepository.findFirstByDeviceIdAndFixTimeBetweenOrderByFixTimeDesc(device.getId(), from, to);
+        boolean ignoreOdometer = false;
+        summary.setDistance(reportUtils.calculateDistance(first, last, !ignoreOdometer));
+        summary.setSpentFuel(reportUtils.calculateFuel(first, last));
 
-        //if (first != null && last != null) {
-            double distance = 0;
-            double maxSpeed = 0;
-
-            List<Position> positions = positionRepository.findByDeviceIdAndFixTimeBetween(device.getId(), from, to);
-            for (Position pos : positions) {
-                if (pos.getSpeed() > maxSpeed) {
-                    maxSpeed = pos.getSpeed();
-                }
+        if (first.hasAttribute("hours") && last.hasAttribute("hours")) {
+            summary.setStartHours(first.getLong("hours"));
+            summary.setEndHours(last.getLong("hours"));
+            if (summary.getEngineHours() > 0) {
+                summary.setAverageSpeed(reportUtils.calculateAverageSpeed(
+                        summary.getDistance(), summary.getEngineHours()));
             }
+        }
 
-           // distance = last.getTotalDistance() - first.getTotalDistance();
+        summary.setStartOdometer(first.getTotalDistance());
+        summary.setEndOdometer(last.getTotalDistance());
 
-            //summary.setStartTime(first.getFixTime());
-           // summary.setEndTime(last.getFixTime());
-            summary.setDistance(distance);
-            summary.setMaxSpeed(maxSpeed);
-            //summary.setStartOdometer(first.getTotalDistance());
-            //summary.setEndOdometer(last.getTotalDistance());
-            summary.setStartHours(0); // Asignar si manejás KEY_HOURS
-            summary.setEndHours(0);
-            summary.setSpentFuel(0); // Asignar si manejás KEY_FUEL_USED
-            summary.setAverageSpeed(0); // Se puede calcular si querés
+        return List.of(summary);
+    }
 
-            return List.of(summary);
-        //}
+    public void exportToExcel(OutputStream outputStream, Long userId,
+                               List<Long> deviceIds, List<Long> groupIds,
+                               Date from, Date to, boolean daily) throws IOException {
 
-        //return List.of();
+        Collection<SummaryReportItem> summaries = getObjects(userId, deviceIds, groupIds, from, to, daily);
+        InputStream template = new ClassPathResource("templates/export/summary.xlsx").getInputStream();
+
+        var context = reportUtils.initializeContext(userId);
+        context.putVar("summaries", summaries);
+        context.putVar("from", from);
+        context.putVar("to", to);
+
+        JxlsHelper.getInstance().setUseFastFormulaProcessor(false)
+                .processTemplate(template, outputStream, context);
     }
 }

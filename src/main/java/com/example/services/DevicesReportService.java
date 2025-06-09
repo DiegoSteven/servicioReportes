@@ -1,5 +1,8 @@
 package com.example.services;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -44,4 +47,19 @@ public class DevicesReportService {
                 .map(device -> new DeviceReportItem(device, positionsMap.get(device.getId())))
                 .collect(Collectors.toList());
     }
+
+    public void exportToExcel(OutputStream outputStream, Long userId) throws IOException {
+    var context = reportUtils.initializeContext(userId);
+    context.putVar("items", getObjects(userId));
+
+    try (InputStream templateStream = getClass().getResourceAsStream("/templates/export/devices.xlsx")) {
+        if (templateStream == null) {
+            throw new RuntimeException("No se encontró la plantilla devices.xlsx");
+        }
+        org.jxls.util.JxlsHelper.getInstance()
+                .setUseFastFormulaProcessor(false)
+                .processTemplate(templateStream, outputStream, context);
+    }
+}
+
 }
